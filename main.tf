@@ -1,29 +1,29 @@
 provider "aws" {
-  region = "us-east-1"
+  region = var.region
 }
 
 # VPC
 resource "aws_vpc" "ecs_vpc" {
-  cidr_block           = "10.0.0.0/16"
+  cidr_block           = var.vpc_cidr
   enable_dns_support   = true
   enable_dns_hostnames = true
 
   tags = {
-    Name = "ecs-vpc"
-    Environment = "dev"
+    Name        = var.vpc_name
+    Environment = var.environment
   }
 }
 
 # Subnet
 resource "aws_subnet" "ecs_subnet" {
   vpc_id                  = aws_vpc.ecs_vpc.id
-  cidr_block              = "10.0.1.0/24"
-  availability_zone       = "us-east-1a"
+  cidr_block              = var.subnet_cidr
+  availability_zone       = var.availability_zone
   map_public_ip_on_launch = true
 
   tags = {
-    Name = "ecs-subnet"
-    Environment = "dev"
+    Name        = "${var.vpc_name}-subnet"
+    Environment = var.environment
   }
 }
 
@@ -31,7 +31,7 @@ resource "aws_internet_gateway" "igw" {
   vpc_id = aws_vpc.ecs_vpc.id
 
   tags = {
-    Name = "ecs-igw"
+    Name = "${var.vpc_name}-igw"
   }
 }
 
@@ -44,7 +44,7 @@ resource "aws_route_table" "public_rt" {
   }
 
   tags = {
-    Name = "ecs-public-rt"
+    Name = "${var.vpc_name}-public-rt"
   }
 }
 
@@ -56,14 +56,14 @@ resource "aws_route_table_association" "public_rt_assoc" {
 # Security Group
 resource "aws_security_group" "ecs_sg" {
   name        = "ecs-sg"
-  description = "Allow all traffic"
+  description = "Allow inbound to app port"
   vpc_id      = aws_vpc.ecs_vpc.id
 
   ingress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
+    from_port   = var.container_port
+    to_port     = var.container_port
+    protocol    = "tcp"
+    cidr_blocks = [var.allowed_ingress_cidr]
   }
 
   egress {
@@ -74,8 +74,8 @@ resource "aws_security_group" "ecs_sg" {
   }
 
   tags = {
-    Name = "ecs-sg"
-    Environment = "dev"
+    Name        = "ecs-sg"
+    Environment = var.environment
   }
 }
 
@@ -92,12 +92,12 @@ resource "aws_ecr_repository" "myapp_repo" {
 
 # ECS Cluster
 resource "aws_ecs_cluster" "ecs_cluster" {
-  name = "my-ecs-cluster"
+  name = var.cluster_name
 }
 
 # IAM Role
 resource "aws_iam_role" "ecs_instance_role" {
-  name = "ecsInstanceRole"
+  name = "ecsInstanceRole-${var.environment}"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17",
@@ -119,16 +119,22 @@ resource "aws_iam_role_policy_attachment" "ecs_attach" {
 
 # IAM Instance Profile
 resource "aws_iam_instance_profile" "ecs_instance_profile" {
-  name = "ecsInstanceProfile"
+  name = "ecsInstanceProfile-${var.environment}"
   role = aws_iam_role.ecs_instance_role.name
 }
 
 # Launch Template
 resource "aws_launch_template" "ecs_lt" {
   name_prefix   = "ecs-lt-"
-  image_id      = "ami-0c58430228056d84e"
-  instance_type = "t2.micro"
-  key_name      = "shaazil"
+  image_id      = var.ami_id
+  instance_type = var.instance_type
+
+  dynamic "key_name" {
+    for_each = var.key_name != "" ? [1] : []
+    content {
+      key_name = var.key_name
+    }
+  }
 
   iam_instance_profile {
     name = aws_iam_instance_profile.ecs_instance_profile.name
@@ -148,17 +154,17 @@ resource "aws_launch_template" "ecs_lt" {
   }
 
   tags = {
-    Name = "ecs-launch-template"
-    Environment = "dev"
+    Name        = "ecs-launch-template"
+    Environment = var.environment
   }
 }
 
 # Auto Scaling Group
 resource "aws_autoscaling_group" "ecs_asg" {
   name_prefix               = "ecs-asg-"
-  max_size                  = 2
-  min_size                  = 1
-  desired_capacity          = 1
+  max_size                  = var.asg_max_size
+  min_size                  = var.asg_min_size
+  desired_capacity          = var.asg_desired_capacity
   vpc_zone_identifier       = [aws_subnet.ecs_subnet.id]
   health_check_type         = "EC2"
   health_check_grace_period = 300
@@ -178,7 +184,7 @@ resource "aws_autoscaling_group" "ecs_asg" {
 
   tag {
     key                 = "Environment"
-    value               = "dev"
+    value               = var.environment
     propagate_at_launch = true
   }
 
@@ -197,18 +203,18 @@ resource "aws_ecs_task_definition" "myapp_task" {
 
   container_definitions = jsonencode([{
     name      = "myapp-container"
-    image     = "940482417774.dkr.ecr.us-east-1.amazonaws.com/myapp:latest"
+    image     = var.image_uri
     essential = true
     portMappings = [{
-      containerPort = 80
-      hostPort      = 80
+      containerPort = var.container_port
+      hostPort      = var.container_port
     }]
   }])
 }
 
 # ECS Service
 resource "aws_ecs_service" "ecs_service" {
-  name            = "myapp-service"
+  name            = var.service_name
   cluster         = aws_ecs_cluster.ecs_cluster.id
   task_definition = aws_ecs_task_definition.myapp_task.arn
   launch_type     = "EC2"
@@ -252,4 +258,3 @@ resource "null_resource" "scale_down_service" {
 output "ecs_cluster_name" {
   value = aws_ecs_cluster.ecs_cluster.name
 }
-

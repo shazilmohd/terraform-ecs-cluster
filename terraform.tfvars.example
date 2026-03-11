@@ -1,0 +1,16 @@
+region = "us-east-1"
+vpc_cidr = "10.0.0.0/16"
+subnet_cidr = "10.0.1.0/24"
+availability_zone = "us-east-1a"
+ami_id = "ami-0c58430228056d84" # Use a region-specific ECS-optimized AMI
+instance_type = "t2.micro"
+key_name = "" # optional
+environment = "dev"
+allowed_ingress_cidr = "0.0.0.0/0" # restrict in prod
+cluster_name = "my-ecs-cluster"
+service_name = "myapp-service"
+container_port = 80
+image_uri = "940482417774.dkr.ecr.us-east-1.amazonaws.com/myapp:latest" # set as build output
+asg_min_size = 1
+asg_max_size = 2
+asg_desired_capacity = 1
