@@ -128,13 +128,7 @@ resource "aws_launch_template" "ecs_lt" {
   name_prefix   = "ecs-lt-"
   image_id      = var.ami_id
   instance_type = var.instance_type
-
-  dynamic "key_name" {
-    for_each = var.key_name != "" ? [1] : []
-    content {
-      key_name = var.key_name
-    }
-  }
+  key_name      = var.key_name != "" ? var.key_name : null
 
   iam_instance_profile {
     name = aws_iam_instance_profile.ecs_instance_profile.name
